@@ -20,7 +20,7 @@ import {
   Activity,
 } from 'lucide-react';
 
-export const revalidate = 60;
+export const dynamic = 'force-dynamic';
 
 export default async function TestDetailPage({
   params,

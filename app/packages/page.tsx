@@ -5,25 +5,30 @@ import { MainFooter } from '@/components/footer/main-footer';
 import { PackageCard } from '@/components/ui/package-card';
 import { Sparkles } from 'lucide-react';
 
-export const revalidate = 60;
+export const dynamic = 'force-dynamic';
 
 export default async function PackagesPage() {
-  const packages = await prisma.healthPackage.findMany({
-    where: { isActive: true },
-    orderBy: [{ isFeatured: 'desc' }, { sellingPrice: 'asc' }],
-    include: {
-      category: true,
-      tests: {
-        include: {
-          test: {
-            include: {
-              parameters: true,
+  let packages: any[] = [];
+  try {
+    packages = await prisma.healthPackage.findMany({
+      where: { isActive: true },
+      orderBy: [{ isFeatured: 'desc' }, { sellingPrice: 'asc' }],
+      include: {
+        category: true,
+        tests: {
+          include: {
+            test: {
+              include: {
+                parameters: true,
+              },
             },
           },
         },
       },
-    },
-  });
+    });
+  } catch (error) {
+    console.warn('Error loading packages:', error);
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-bgLight/40">
