@@ -1,0 +1,393 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id              String           @id @default(cuid())
+  email           String           @unique
+  passwordHash    String
+  name            String
+  phone           String?
+  role            String           @default("PATIENT") // SUPER_ADMIN, ADMIN, LAB_MANAGER, RECEPTIONIST, PHLEBOTOMIST, REPORT_MANAGER, PATIENT
+  isActive        Boolean          @default(true)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  profile         PatientProfile?
+  addresses       PatientAddress[]
+  familyMembers   FamilyMember[]
+  bookings        Booking[]        @relation("PatientBookings")
+  assignedTasks   Booking[]        @relation("PhlebotomistAssignments")
+  reportsReleased MedicalReport[]  @relation("ReportsReleasedBy")
+  auditLogs       AuditLog[]
+
+  @@index([email])
+  @@index([role])
+}
+
+model PatientProfile {
+  id               String    @id @default(cuid())
+  userId           String    @unique
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dob              DateTime?
+  gender           String?   // Male, Female, Other
+  bloodGroup       String?
+  emergencyContact String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
+model PatientAddress {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label       String   @default("Home") // Home, Work, Other
+  houseNumber String
+  street      String
+  area        String
+  city        String
+  pincode     String
+  landmark    String?
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+}
+
+model FamilyMember {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName     String
+  relationship String   // Spouse, Child, Parent, Sibling, Other
+  age          Int
+  gender       String   // Male, Female, Other
+  phone        String?
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+}
+
+model ServiceLocation {
+  id                        String           @id @default(cuid())
+  name                      String           // e.g. "Delhi NCR - South", "Mumbai - Andheri", "Bengaluru - Indiranagar"
+  city                      String           // e.g. "Delhi NCR", "Mumbai", "Bengaluru"
+  state                     String           // e.g. "Delhi", "Maharashtra", "Karnataka"
+  pincode                   String
+  isHomeCollectionAvailable Boolean          @default(true)
+  isCenterVisitAvailable    Boolean          @default(true)
+  address                   String
+  phone                     String?
+  isActive                  Boolean          @default(true)
+  slots                     CollectionSlot[]
+  bookings                  Booking[]
+
+  @@index([city])
+}
+
+model TestCategory {
+  id           String           @id @default(cuid())
+  name         String           @unique
+  slug         String           @unique
+  description  String
+  iconName     String           @default("Activity")
+  displayOrder Int              @default(0)
+  isFeatured   Boolean          @default(false)
+  isActive     Boolean          @default(true)
+  tests        DiagnosticTest[]
+  packages     HealthPackage[]
+  createdAt    DateTime         @default(now())
+}
+
+model DiagnosticTest {
+  id                        String          @id @default(cuid())
+  testCode                  String          @unique // e.g. "HPD-CBC-01"
+  name                      String
+  slug                      String          @unique
+  shortDescription          String
+  overview                  String
+  clinicalPurpose           String
+  sampleType                String          // Blood, Urine, Swab, Sputum, etc.
+  fastingRequired           Boolean         @default(false)
+  fastingHours              Int             @default(0)
+  preparation               String          // e.g. "10-12 hours overnight fasting required. Water intake allowed."
+  reportTurnaroundHours     Int             @default(24) // in hours
+  mrpPrice                  Float           // Regular price in INR
+  sellingPrice              Float           // Discounted selling price in INR
+  discountPercent           Int             @default(0)
+  isPopular                 Boolean         @default(false)
+  isHomeCollectionAvailable Boolean         @default(true)
+  isCenterVisitAvailable    Boolean         @default(true)
+  isActive                  Boolean         @default(true)
+  
+  categoryId                String
+  category                  TestCategory    @relation(fields: [categoryId], references: [id])
+  
+  parameters                TestParameter[]
+  packageAssociations       PackageTest[]
+  createdAt                 DateTime        @default(now())
+  updatedAt                 DateTime        @updatedAt
+
+  @@index([slug])
+  @@index([testCode])
+  @@index([categoryId])
+  @@index([isPopular])
+}
+
+model TestParameter {
+  id             String         @id @default(cuid())
+  testId         String
+  test           DiagnosticTest @relation(fields: [testId], references: [id], onDelete: Cascade)
+  name           String         // e.g. "Hemoglobin", "RBC Count", "WBC Count"
+  referenceRange String?        // e.g. "13.0 - 17.0"
+  unit           String?        // e.g. "g/dL", "million/mcL"
+  description    String?
+  displayOrder   Int            @default(0)
+
+  @@index([testId])
+}
+
+model HealthPackage {
+  id                    String        @id @default(cuid())
+  name                  String
+  slug                  String        @unique
+  shortDescription      String
+  overview              String
+  mrpPrice              Float
+  sellingPrice          Float
+  discountPercent       Int           @default(0)
+  fastingRequired       Boolean       @default(false)
+  fastingHours          Int           @default(0)
+  reportTurnaroundHours Int           @default(24)
+  isPopular             Boolean       @default(false)
+  isFeatured            Boolean       @default(false)
+  isActive              Boolean       @default(true)
+
+  categoryId            String?
+  category              TestCategory? @relation(fields: [categoryId], references: [id])
+
+  tests                 PackageTest[]
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  @@index([slug])
+  @@index([isFeatured])
+}
+
+model PackageTest {
+  id        String         @id @default(cuid())
+  packageId String
+  package   HealthPackage  @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  testId    String
+  test      DiagnosticTest @relation(fields: [testId], references: [id], onDelete: Cascade)
+
+  @@unique([packageId, testId])
+  @@index([packageId])
+  @@index([testId])
+}
+
+model CollectionSlot {
+  id                String          @id @default(cuid())
+  startTime         String          // e.g. "06:30 AM"
+  endTime           String          // e.g. "07:30 AM"
+  capacity          Int             @default(5)
+  serviceLocationId String
+  serviceLocation   ServiceLocation @relation(fields: [serviceLocationId], references: [id], onDelete: Cascade)
+  isFastingSlot     Boolean         @default(false)
+  isActive          Boolean         @default(true)
+
+  @@index([serviceLocationId])
+}
+
+model Booking {
+  id                 String          @id @default(cuid())
+  bookingRef         String          @unique // e.g. "HPD-2026-8941"
+  userId             String
+  user               User            @relation("PatientBookings", fields: [userId], references: [id])
+  
+  patientName        String
+  patientAge         Int
+  patientGender      String          // Male, Female, Other
+  patientPhone       String
+  patientEmail       String?
+  
+  collectionType     String          @default("HOME_COLLECTION") // HOME_COLLECTION, CENTER_VISIT
+  status             String          @default("PENDING_CONFIRMATION") // PENDING_CONFIRMATION, CONFIRMED, COLLECTION_ASSIGNED, SAMPLE_COLLECTED, SAMPLE_RECEIVED, PROCESSING, REPORT_READY, COMPLETED, CANCELLED
+  
+  scheduledDate      DateTime
+  slotTime           String          // e.g. "07:00 AM - 08:00 AM"
+  
+  serviceLocationId  String
+  serviceLocation    ServiceLocation @relation(fields: [serviceLocationId], references: [id])
+  
+  addressString      String?         // Full snapshot of address for home collection
+  
+  subtotal           Float
+  discount           Float           @default(0)
+  collectionFee      Float           @default(0)
+  finalAmount        Float
+  
+  paymentStatus      String          @default("PENDING") // PENDING, PAID, FAILED, REFUND_PENDING, REFUNDED
+  paymentMethod      String          @default("ONLINE") // ONLINE, CASH_ON_COLLECTION, PAY_AT_LAB
+  paymentId          String?         // Transaction reference / mock payment ID
+  
+  phlebotomistId     String?
+  phlebotomist       User?           @relation("PhlebotomistAssignments", fields: [phlebotomistId], references: [id])
+  
+  notes              String?
+  cancellationReason String?
+  
+  items              BookingItem[]
+  reports            MedicalReport[]
+  couponRedemptions  CouponRedemption[]
+  
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  @@index([bookingRef])
+  @@index([userId])
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([scheduledDate])
+  @@index([serviceLocationId])
+}
+
+model BookingItem {
+  id           String   @id @default(cuid())
+  bookingId    String
+  booking      Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  itemType     String   // "TEST" or "PACKAGE"
+  testId       String?
+  packageId    String?
+  itemName     String
+  itemCode     String?
+  priceCharged Float
+  sampleType   String?
+
+  @@index([bookingId])
+}
+
+model Coupon {
+  id             String             @id @default(cuid())
+  code           String             @unique // e.g. "HEALTH10", "FIRST50"
+  description    String
+  discountType   String             @default("PERCENTAGE") // PERCENTAGE, FIXED
+  discountValue  Float              // 10 for 10%, or 200 for 200 INR
+  minOrderValue  Float              @default(0)
+  maxDiscount    Float?             // Cap for percentage discounts
+  maxUses        Int                @default(1000)
+  currentUses    Int                @default(0)
+  validFrom      DateTime           @default(now())
+  validUntil     DateTime
+  isActive       Boolean            @default(true)
+  redemptions    CouponRedemption[]
+
+  @@index([code])
+}
+
+model CouponRedemption {
+  id              String   @id @default(cuid())
+  couponId        String
+  coupon          Coupon   @relation(fields: [couponId], references: [id])
+  bookingId       String
+  booking         Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  userId          String
+  discountApplied Float
+  redeemedAt      DateTime @default(now())
+
+  @@index([couponId])
+  @@index([bookingId])
+}
+
+model MedicalReport {
+  id            String           @id @default(cuid())
+  bookingId     String
+  booking       Booking          @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  reportNumber  String           @unique // e.g. "RPT-2026-9812"
+  fileName      String
+  fileUrl       String
+  fileSize      Int              // in bytes
+  status        String           @default("DRAFT") // DRAFT, READY, RELEASED, REVISED
+  releasedAt    DateTime?
+  releasedById  String?
+  releasedBy    User?            @relation("ReportsReleasedBy", fields: [releasedById], references: [id])
+  remarks       String?
+  revisions     ReportRevision[]
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([bookingId])
+  @@index([reportNumber])
+  @@index([status])
+}
+
+model ReportRevision {
+  id             String        @id @default(cuid())
+  reportId       String
+  report         MedicalReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  revisionNumber Int           @default(1)
+  fileUrl        String
+  changeReason   String
+  updatedById    String?
+  createdAt      DateTime      @default(now())
+
+  @@index([reportId])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id])
+  userEmail   String?
+  action      String   // e.g. "REPORT_RELEASED", "BOOKING_STATUS_CHANGED", "TEST_UPDATED"
+  entityType  String   // "Booking", "MedicalReport", "DiagnosticTest", etc.
+  entityId    String
+  detailsJson String?  // JSON string with diff / details
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+
+  @@index([action])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+model WebsiteContent {
+  id          String   @id @default(cuid())
+  sectionKey  String   @unique // e.g. "HERO_BANNER", "TRUST_CARDS", "LAB_INFO"
+  title       String
+  subtitle    String?
+  contentJson String   // Flexible JSON for banner text, button links, contact numbers, hours
+  isActive    Boolean  @default(true)
+  updatedAt   DateTime @updatedAt
+
+  @@index([sectionKey])
+}
+
+model FAQ {
+  id           String   @id @default(cuid())
+  question     String
+  answer       String
+  category     String   @default("General") // General, Fasting, Home Collection, Reports, Payment
+  displayOrder Int      @default(0)
+  isActive     Boolean  @default(true)
+
+  @@index([category])
+}
+
+model Testimonial {
+  id                String   @id @default(cuid())
+  patientName       String
+  location          String   // e.g. "South Delhi, Delhi"
+  rating            Int      @default(5)
+  reviewText        String
+  testOrPackageName String?  // e.g. "Comprehensive Full Body Checkup"
+  isVerified        Boolean  @default(true)
+  displayOrder      Int      @default(0)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+}
